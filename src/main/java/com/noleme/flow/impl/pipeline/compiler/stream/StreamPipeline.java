@@ -14,7 +14,8 @@ import java.util.*;
 public class StreamPipeline extends AbstractNode
 {
     private final StreamGenerator<?, ?> generatorNode;
-    private final LinkedList<Node> nodes;
+    private final List<Node> nodes;
+    private StreamPipeline topParent;
     private String pivot;
     private Set<String> potentialPivots;
 
@@ -22,11 +23,19 @@ public class StreamPipeline extends AbstractNode
      *
      * @param generatorNode
      */
-    public StreamPipeline(StreamGenerator generatorNode)
+    public StreamPipeline(StreamGenerator<?, ?> generatorNode, StreamPipeline topParent)
     {
         super();
         this.generatorNode = generatorNode;
-        this.nodes = new LinkedList<>();
+        this.topParent = topParent;
+        this.nodes = new ArrayList<>();
+        this.setDepth(generatorNode.getDepth());
+    }
+
+    public StreamPipeline(StreamGenerator<?, ?> generatorNode)
+    {
+        this(generatorNode, null);
+        this.topParent = this;
     }
 
     @Override
@@ -58,15 +67,20 @@ public class StreamPipeline extends AbstractNode
         return this.generatorNode;
     }
 
-    public StreamPipeline push(Node node)
+    public StreamPipeline add(Node node)
     {
-        this.nodes.push(node);
+        this.nodes.add(node);
         return this;
     }
 
     public List<Node> getNodes()
     {
         return this.nodes;
+    }
+
+    public StreamPipeline getTopParent()
+    {
+        return this.topParent;
     }
 
     public StreamPipeline setPotentialPivots(Set<String> pivots)
