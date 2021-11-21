@@ -52,6 +52,13 @@ public interface StreamOut<O> extends CurrentOut<O>
         return this.into(loader);
     }
 
+    @Override
+    default StreamOut<O> driftSink(Loader<O> loader)
+    {
+        this.into(loader);
+        return this;
+    }
+
     /**
      * Joins the current stream node with another non-stream flow using a bi-transformer join function.
      *

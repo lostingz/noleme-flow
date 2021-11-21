@@ -66,8 +66,10 @@ public class PipelineStreamCascadeTest
             .stream(IterableGenerator::new)
             .stream(IterableGenerator::new)
             .into(i -> i + 1)
+            .driftSink(System.out::println)
+            .accumulate().asStream()
+            .driftSink(System.out::println)
             .accumulate()
-            //.accumulate()
             .sink(i -> assertion.activate())
         ;
 

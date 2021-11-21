@@ -15,21 +15,21 @@ public class StreamPipeline extends AbstractNode
 {
     private final StreamGenerator<?, ?> generatorNode;
     private final List<Node> nodes;
+    private final StreamPipeline parent;
     private StreamPipeline topParent;
-    private String pivot;
-    private Set<String> potentialPivots;
 
     /**
      *
      * @param generatorNode
      */
-    public StreamPipeline(StreamGenerator<?, ?> generatorNode, StreamPipeline topParent)
+    public StreamPipeline(StreamGenerator<?, ?> generatorNode, StreamPipeline parent)
     {
         super();
         this.generatorNode = generatorNode;
-        this.topParent = topParent;
         this.nodes = new ArrayList<>();
         this.setDepth(generatorNode.getDepth());
+        this.parent = parent;
+        this.topParent = parent != null ? parent.getTopParent() : null;
     }
 
     public StreamPipeline(StreamGenerator<?, ?> generatorNode)
@@ -78,30 +78,13 @@ public class StreamPipeline extends AbstractNode
         return this.nodes;
     }
 
+    public StreamPipeline getParent()
+    {
+        return this.parent;
+    }
+
     public StreamPipeline getTopParent()
     {
         return this.topParent;
-    }
-
-    public StreamPipeline setPotentialPivots(Set<String> pivots)
-    {
-        this.potentialPivots = pivots;
-        return this;
-    }
-
-    public Set<String> getPotentialPivots()
-    {
-        return this.potentialPivots;
-    }
-
-    public StreamPipeline setPivot(String pivot)
-    {
-        this.pivot = pivot;
-        return this;
-    }
-
-    public String getPivot()
-    {
-        return this.pivot;
     }
 }

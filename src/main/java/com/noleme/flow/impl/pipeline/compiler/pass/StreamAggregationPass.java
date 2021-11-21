@@ -6,7 +6,6 @@ import com.noleme.flow.node.Node;
 import com.noleme.flow.stream.StreamAccumulator;
 import com.noleme.flow.stream.StreamGenerator;
 import com.noleme.flow.stream.StreamNode;
-import com.noleme.flow.stream.StreamOut;
 
 import java.util.*;
 
@@ -27,30 +26,38 @@ public class StreamAggregationPass implements PipelineCompilerPass
         {
             Node node = queue.poll();
 
-            if (node instanceof StreamGenerator && !registry.contains(node))
+            if (registry.contains(node) || registry.isPartOfPipeline(node))
+                continue;
+            if (node instanceof StreamGenerator)
             {
                 var pipeline = new StreamPipeline((StreamGenerator<?, ?>) node);
-                this.compileStream(node, pipeline, null, registry);
+                registry.registerPipelinePart(pipeline, node);
+                this.compileStream(node, pipeline, registry);
                 queue.push(pipeline);
             }
-            else if (registry.contains(node))
-                continue;
-            else if (node instanceof StreamPipeline && registry.isPipelineUpstreamSatisfied((StreamPipeline) node))
-                registry.add(node);
-            else if (!(node instanceof StreamPipeline) && registry.isUpstreamSatisfied(node))
-                registry.add(node);
-            else
-                queue.add(node);
+            else if (node instanceof StreamPipeline)
+            {
+                if (registry.isPipelineUpstreamSatisfied((StreamPipeline) node))
+                    registry.add(node);
+                else
+                    queue.add(node);
+            }
+            else {
+                if (registry.isUpstreamSatisfied(node))
+                    registry.add(node);
+                else
+                    queue.add(node);
+            }
         }
 
         return registry.nodes();
     }
 
-    private void compileStream(Node node, StreamPipeline pipeline, StreamPipeline parent, Registry registry)
+    private void compileStream(Node node, StreamPipeline pipeline, Registry registry)
     {
         for (Node usn : node.getUpstream())
         {
-            if (usn instanceof StreamOut)
+            if (usn instanceof StreamNode || usn instanceof StreamGenerator || usn instanceof StreamAccumulator)
                 continue;
             registry.registerPivot(pipeline.getTopParent(), usn);
         }
@@ -59,25 +66,35 @@ public class StreamAggregationPass implements PipelineCompilerPass
             /* If we find a cascading stream, we initialize a sub-stream pipeline and crawl it */
             if (dsn instanceof StreamGenerator)
             {
-                var sub = new StreamPipeline((StreamGenerator<?, ?>) dsn, parent);
+                var sub = new StreamPipeline((StreamGenerator<?, ?>) dsn, pipeline);
                 pipeline.add(sub);
-                this.compileStream(dsn, sub, pipeline, registry);
+                registry.registerPipelinePart(pipeline, dsn);
+                registry.registerPipelinePart(pipeline, sub);
+                this.compileStream(dsn, sub, registry);
             }
             /* If we find stream nodes, we push them to the pipeline */
             else if (dsn instanceof StreamNode)
             {
                 pipeline.add(dsn);
-                this.compileStream(dsn, pipeline, parent, registry);
+                registry.registerPipelinePart(pipeline, dsn);
+                this.compileStream(dsn, pipeline, registry);
             }
-            else if (dsn instanceof StreamAccumulator && parent != null)
-                parent.add(dsn);
+            else if (dsn instanceof StreamAccumulator && pipeline.getParent() != null)
+            {
+                pipeline.getParent().add(dsn);
+                registry.registerPipelinePart(pipeline.getParent(), dsn);
+                this.compileStream(dsn, pipeline.getParent(), registry);
+            }
         }
+        //registry.register(pipeline);
     }
 
     private static class Registry
     {
         private final Set<Node> registry = new HashSet<>();
         private final List<Node> nodes = new ArrayList<>();
+        private final Map<StreamPipeline, Set<Node>> inPipelineMap = new HashMap<>();
+        private final Set<Node> inPipeline = new HashSet<>();
         private final Map<StreamPipeline, Set<Node>> pivots = new HashMap<>();
 
         public Registry add(Node node)
@@ -109,9 +126,30 @@ public class StreamAggregationPass implements PipelineCompilerPass
             return this;
         }
 
+        public Registry registerPipelinePart(StreamPipeline pipeline, Node node)
+        {
+            if (!this.inPipelineMap.containsKey(pipeline))
+                this.inPipelineMap.put(pipeline, new HashSet<>());
+            this.inPipelineMap.get(pipeline).add(node);
+            this.inPipeline.add(node);
+            return this;
+        }
+
         public boolean contains(Node node)
         {
             return this.registry.contains(node);
+        }
+
+        public boolean isPartOfPipeline(Node node)
+        {
+            return this.inPipeline.contains(node);
+        }
+
+        public boolean isPartOfPipeline(StreamPipeline pipeline, Node node)
+        {
+            if (this.inPipelineMap.containsKey(pipeline))
+                return false;
+            return this.inPipelineMap.get(pipeline).contains(node);
         }
 
         public boolean isPipelineUpstreamSatisfied(StreamPipeline pipeline)
@@ -121,12 +159,12 @@ public class StreamAggregationPass implements PipelineCompilerPass
                 return true;
 
             long pivotNotSatisfied = this.pivots.get(pipeline).stream()
-                .filter(pn -> !this.registry.contains(pn))
+                .filter(pn -> !this.contains(pn) && !this.isPartOfPipeline(pipeline, pn))
                 .count()
             ;
 
             long upstreamNotSatisfied = pipeline.getUpstream().stream()
-                .filter(usn -> !this.registry.contains(usn))
+                .filter(usn -> !this.contains(usn) && !this.isPartOfPipeline(pipeline, usn))
                 .count()
             ;
 
